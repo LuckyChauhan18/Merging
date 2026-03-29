@@ -1,0 +1,19 @@
+node_modules/
+.env
+
+# Local video folders
+uploads/
+merged/
+before_video/
+finalvideo/
+
+# Logs
+server.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Temp files
+*.tmp
+concat_list.txt

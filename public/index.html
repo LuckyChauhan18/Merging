@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Merger</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2.2rem;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #888;
+      margin-bottom: 40px;
+      font-size: 0.95rem;
+    }
+
+    /* Upload Area */
+    .upload-area {
+      border: 2px dashed #333;
+      border-radius: 16px;
+      padding: 50px 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: #16162a;
+      position: relative;
+    }
+
+    .upload-area:hover, .upload-area.dragover {
+      border-color: #667eea;
+      background: #1a1a35;
+    }
+
+    .upload-area input { display: none; }
+
+    .upload-icon {
+      font-size: 3rem;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .upload-text {
+      font-size: 1.1rem;
+      color: #aaa;
+      margin-bottom: 8px;
+    }
+
+    .upload-hint {
+      font-size: 0.85rem;
+      color: #666;
+    }
+
+    /* File List */
+    .file-list {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #1e1e36;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid #2a2a45;
+    }
+
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .file-number {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .file-name {
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+
+    .file-size {
+      font-size: 0.8rem;
+      color: #888;
+    }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      color: #ff4757;
+      cursor: pointer;
+      font-size: 1.3rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+
+    .remove-btn:hover { background: rgba(255, 71, 87, 0.15); }
+
+    /* Merge Button */
+    .merge-btn {
+      display: block;
+      width: 100%;
+      margin-top: 24px;
+      padding: 16px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .merge-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.35);
+    }
+
+    .merge-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Progress */
+    .progress-section {
+      margin-top: 24px;
+      display: none;
+    }
+
+    .progress-section.active { display: block; }
+
+    .progress-bar-bg {
+      height: 6px;
+      background: #222;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    .progress-text {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+
+    /* Result Section */
+    .result-section {
+      margin-top: 32px;
+      display: none;
+    }
+
+    .result-section.active { display: block; }
+
+    .result-card {
+      background: #16162a;
+      border: 1px solid #2a2a45;
+      border-radius: 16px;
+      padding: 24px;
+    }
+
+    .result-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #667eea;
+    }
+
+    .video-player {
+      width: 100%;
+      border-radius: 12px;
+      background: #000;
+      max-height: 500px;
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #00b894, #00cec9);
+      color: #fff;
+      transition: all 0.3s ease;
+      text-decoration: none;
+    }
+
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 184, 148, 0.35);
+    }
+
+    .new-merge-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+      margin-left: 12px;
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: 2px solid #444;
+      border-radius: 10px;
+      cursor: pointer;
+      background: transparent;
+      color: #ccc;
+      transition: all 0.3s ease;
+    }
+
+    .new-merge-btn:hover {
+      border-color: #667eea;
+      color: #fff;
+    }
+
+    /* Error */
+    .error-msg {
+      margin-top: 16px;
+      padding: 14px;
+      background: rgba(255, 71, 87, 0.1);
+      border: 1px solid rgba(255, 71, 87, 0.3);
+      border-radius: 10px;
+      color: #ff6b7a;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    .error-msg.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Video Merger</h1>
+    <p class="subtitle">Upload videos, merge them together, and download the result</p>
+
+    <!-- Upload -->
+    <div class="upload-area" id="uploadArea">
+      <span class="upload-icon">&#127916;</span>
+      <p class="upload-text">Drag & drop videos here or click to browse</p>
+      <p class="upload-hint">Supports MP4, MOV, AVI, MKV, WebM (max 500MB each, up to 5 videos)</p>
+      <input type="file" id="fileInput" accept="video/*" multiple />
+    </div>
+
+    <!-- File List -->
+    <div class="file-list" id="fileList"></div>
+
+    <!-- Merge Button -->
+    <button class="merge-btn" id="mergeBtn" disabled>Select at least 2 videos to merge</button>
+
+    <!-- Error -->
+    <div class="error-msg" id="errorMsg"></div>
+
+    <!-- Progress -->
+    <div class="progress-section" id="progressSection">
+      <div class="progress-bar-bg">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <p class="progress-text" id="progressText">Uploading & merging...</p>
+    </div>
+
+    <!-- Result -->
+    <div class="result-section" id="resultSection">
+      <div class="result-card">
+        <h2 class="result-title">Merged Video</h2>
+        <video class="video-player" id="videoPlayer" controls></video>
+        <div>
+          <a class="download-btn" id="downloadBtn" href="#">&#11015; Download Video</a>
+          <button class="new-merge-btn" id="newMergeBtn">&#8634; Merge New Videos</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const uploadArea = document.getElementById("uploadArea");
+    const fileInput = document.getElementById("fileInput");
+    const fileList = document.getElementById("fileList");
+    const mergeBtn = document.getElementById("mergeBtn");
+    const errorMsg = document.getElementById("errorMsg");
+    const progressSection = document.getElementById("progressSection");
+    const progressBar = document.getElementById("progressBar");
+    const progressText = document.getElementById("progressText");
+    const resultSection = document.getElementById("resultSection");
+    const videoPlayer = document.getElementById("videoPlayer");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const newMergeBtn = document.getElementById("newMergeBtn");
+
+    let selectedFiles = [];
+
+    // Upload area events
+    uploadArea.addEventListener("click", () => fileInput.click());
+
+    uploadArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadArea.classList.add("dragover");
+    });
+
+    uploadArea.addEventListener("dragleave", () => {
+      uploadArea.classList.remove("dragover");
+    });
+
+    uploadArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove("dragover");
+      addFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener("change", () => {
+      addFiles(fileInput.files);
+      fileInput.value = "";
+    });
+
+    const MAX_VIDEOS = 5;
+
+    function addFiles(files) {
+      for (const file of files) {
+        if (selectedFiles.length >= MAX_VIDEOS) {
+          errorMsg.textContent = "Maximum 5 videos allowed";
+          errorMsg.classList.add("active");
+          break;
+        }
+        if (file.type.startsWith("video/")) {
+          errorMsg.classList.remove("active");
+          selectedFiles.push(file);
+        }
+      }
+      renderFileList();
+    }
+
+    function removeFile(index) {
+      selectedFiles.splice(index, 1);
+      renderFileList();
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
+    function renderFileList() {
+      fileList.innerHTML = selectedFiles
+        .map(
+          (f, i) => `
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-number">${i + 1}</span>
+            <div>
+              <div class="file-name">${f.name}</div>
+              <div class="file-size">${formatSize(f.size)}</div>
+            </div>
+          </div>
+          <button class="remove-btn" onclick="removeFile(${i})">&times;</button>
+        </div>`
+        )
+        .join("");
+
+      // Hide upload area when 5 videos selected
+      if (selectedFiles.length >= MAX_VIDEOS) {
+        uploadArea.style.display = "none";
+      } else {
+        uploadArea.style.display = "";
+      }
+
+      if (selectedFiles.length >= 2) {
+        mergeBtn.disabled = false;
+        mergeBtn.textContent = `Merge ${selectedFiles.length} Video${selectedFiles.length > 1 ? "s" : ""} (${selectedFiles.length}/${MAX_VIDEOS})`;
+      } else {
+        mergeBtn.disabled = true;
+        mergeBtn.textContent = `Select at least 2 videos (${selectedFiles.length}/${MAX_VIDEOS})`;
+      }
+    }
+
+    // Merge
+    mergeBtn.addEventListener("click", async () => {
+      if (selectedFiles.length < 2) return;
+
+      errorMsg.classList.remove("active");
+      progressSection.classList.add("active");
+      resultSection.classList.remove("active");
+      mergeBtn.disabled = true;
+      progressBar.style.width = "0%";
+      progressText.textContent = "Uploading & merging...";
+
+      const formData = new FormData();
+      selectedFiles.forEach((f) => formData.append("videos", f));
+
+      try {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 80);
+            progressBar.style.width = pct + "%";
+            progressText.textContent = `Uploading... ${pct}%`;
+          }
+        });
+
+        const response = await new Promise((resolve, reject) => {
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(JSON.parse(xhr.responseText));
+            } else {
+              try {
+                reject(new Error(JSON.parse(xhr.responseText).error));
+              } catch {
+                reject(new Error("Server error"));
+              }
+            }
+          };
+          xhr.onerror = () => reject(new Error("Network error"));
+
+          xhr.open("POST", "/api/merge");
+
+          // Simulate merge progress after upload
+          xhr.upload.addEventListener("load", () => {
+            progressBar.style.width = "85%";
+            progressText.textContent = "Merging videos...";
+            const interval = setInterval(() => {
+              const w = parseFloat(progressBar.style.width);
+              if (w < 95) progressBar.style.width = w + 1 + "%";
+              else clearInterval(interval);
+            }, 300);
+          });
+
+          xhr.send(formData);
+        });
+
+        progressBar.style.width = "100%";
+        progressText.textContent = "Done!";
+
+        // Show result
+        setTimeout(() => {
+          progressSection.classList.remove("active");
+          resultSection.classList.add("active");
+          videoPlayer.src = response.url;
+          downloadBtn.href = response.downloadUrl;
+        }, 500);
+      } catch (err) {
+        progressSection.classList.remove("active");
+        errorMsg.textContent = err.message;
+        errorMsg.classList.add("active");
+        mergeBtn.disabled = false;
+      }
+    });
+
+    // New merge
+    newMergeBtn.addEventListener("click", () => {
+      selectedFiles = [];
+      renderFileList();
+      resultSection.classList.remove("active");
+      errorMsg.classList.remove("active");
+      uploadArea.style.display = "";
+      videoPlayer.src = "";
+    });
+  </script>
+</body>
+</html>
