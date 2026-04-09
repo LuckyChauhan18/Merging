@@ -65,62 +65,122 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    const allowed = [".mp4", ".mov", ".avi", ".mkv", ".webm"];
+    const videoExts = [".mp4", ".mov", ".avi", ".mkv", ".webm"];
+    const audioExts = [".mp3", ".wav", ".aac", ".ogg", ".m4a", ".flac"];
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, allowed.includes(ext));
+    cb(null, videoExts.includes(ext) || audioExts.includes(ext));
   },
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
 // --- Static files ---
 app.use(express.static(path.join(__dirname, "public")));
+app.use(express.urlencoded({ extended: true }));
 
 // --- Upload & Merge ---
-app.post("/api/merge", upload.array("videos", 5), async (req, res) => {
-  if (!req.files || req.files.length < 2) {
+const mergeUpload = upload.fields([
+  { name: "videos", maxCount: 5 },
+  { name: "audio", maxCount: 1 },
+]);
+
+app.post("/api/merge", mergeUpload, async (req, res) => {
+  const mode = req.body.mode || "merge"; // "merge" or "sync"
+  const videoFiles = req.files["videos"] || [];
+  const audioFiles = req.files["audio"] || [];
+  const audioFile = audioFiles[0] || null;
+  const allFiles = [...videoFiles, ...audioFiles];
+
+  // Validation
+  if (mode === "merge" && videoFiles.length < 2) {
+    allFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
     return res.status(400).json({ error: "Please upload at least 2 videos" });
   }
-  if (req.files.length > 5) {
-    req.files.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+  if (mode === "sync" && videoFiles.length < 1) {
+    allFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+    return res.status(400).json({ error: "Please upload at least 1 video" });
+  }
+  if (mode === "sync" && !audioFile) {
+    allFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+    return res.status(400).json({ error: "Please upload an audio file" });
+  }
+  if (videoFiles.length > 5) {
+    allFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
     return res.status(400).json({ error: "Maximum 5 videos allowed" });
   }
 
-  // Unique job ID for R2 folder structure
   const jobId = crypto.randomBytes(8).toString("hex");
   const jobDir = path.join(tmpBase, jobId);
   fs.mkdirSync(jobDir, { recursive: true });
 
   try {
-    // 1. Upload input videos to R2: jobs/{jobId}/input/1-filename.mp4
+    // 1. Upload inputs to R2
     const r2InputKeys = [];
-    for (let i = 0; i < req.files.length; i++) {
-      const f = req.files[i];
+    for (let i = 0; i < videoFiles.length; i++) {
+      const f = videoFiles[i];
       const r2Key = `jobs/${jobId}/input/${i + 1}-${f.originalname}`;
       await uploadToR2(r2Key, f.path, f.mimetype || "video/mp4");
       r2InputKeys.push(r2Key);
     }
-
-    // 2. Build concat file and merge with ffmpeg
-    const concatFile = path.join(jobDir, "concat.txt");
-    const concatContent = req.files
-      .map((f) => `file '${f.path.replace(/\\/g, "/")}'`)
-      .join("\n");
-    fs.writeFileSync(concatFile, concatContent);
+    if (audioFile) {
+      const audioR2Key = `jobs/${jobId}/input/audio-${audioFile.originalname}`;
+      await uploadToR2(audioR2Key, audioFile.path, audioFile.mimetype || "audio/mpeg");
+    }
 
     const outputFileName = `merged_${jobId}.mp4`;
     const outputPath = path.join(jobDir, outputFileName);
 
-    execSync(
-      `ffmpeg -y -f concat -safe 0 -i "${concatFile}" -c copy "${outputPath}"`,
-      { stdio: "pipe", timeout: 300000 }
-    );
+    if (mode === "sync") {
+      // --- SYNC MODE: merge videos + overlay audio with perfect lip sync ---
+      let videoInput = videoFiles[0].path;
 
-    // 3. Upload merged video to R2: jobs/{jobId}/output/merged.mp4
+      // If multiple videos, concat them first with re-encoding for uniform timestamps
+      if (videoFiles.length > 1) {
+        const concatFile = path.join(jobDir, "concat.txt");
+        const concatContent = videoFiles
+          .map((f) => `file '${f.path.replace(/\\/g, "/")}'`)
+          .join("\n");
+        fs.writeFileSync(concatFile, concatContent);
+
+        videoInput = path.join(jobDir, `concat_${jobId}.mp4`);
+        // Re-encode to normalize timestamps across clips for sync accuracy
+        execSync(
+          `ffmpeg -y -f concat -safe 0 -i "${concatFile}" -c:v libx264 -preset fast -crf 23 -an -vsync cfr "${videoInput}"`,
+          { stdio: "pipe", timeout: 600000 }
+        );
+      }
+
+      // Combine video + audio with perfect sync:
+      // -vsync cfr: constant frame rate for consistent timing
+      // -async 1: correct audio start to align with video PTS from frame 0
+      // -af aresample=async=1: resample audio to stay in sync throughout
+      execSync(
+        `ffmpeg -y -i "${videoInput}" -i "${audioFile.path}" ` +
+        `-c:v libx264 -preset fast -crf 23 -c:a aac -b:a 192k ` +
+        `-map 0:v:0 -map 1:a:0 ` +
+        `-vsync cfr -async 1 -af "aresample=async=1" ` +
+        `-shortest "${outputPath}"`,
+        { stdio: "pipe", timeout: 600000 }
+      );
+    } else {
+      // --- MERGE MODE: concat videos with their existing audio ---
+      const concatFile = path.join(jobDir, "concat.txt");
+      const concatContent = videoFiles
+        .map((f) => `file '${f.path.replace(/\\/g, "/")}'`)
+        .join("\n");
+      fs.writeFileSync(concatFile, concatContent);
+
+      execSync(
+        `ffmpeg -y -f concat -safe 0 -i "${concatFile}" -c copy "${outputPath}"`,
+        { stdio: "pipe", timeout: 300000 }
+      );
+    }
+
+    // Upload to R2
     const r2OutputKey = `jobs/${jobId}/output/${outputFileName}`;
     const publicUrl = await uploadToR2(r2OutputKey, outputPath, "video/mp4");
 
-    // 4. Cleanup temp files
-    req.files.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+    // Cleanup
+    allFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
     fs.rmSync(jobDir, { recursive: true, force: true });
 
     res.json({
@@ -129,15 +189,14 @@ app.post("/api/merge", upload.array("videos", 5), async (req, res) => {
       url: publicUrl,
       downloadUrl: `/api/download/${jobId}/${outputFileName}`,
       inputFiles: r2InputKeys.map((key, i) => ({
-        name: req.files[i].originalname,
+        name: videoFiles[i].originalname,
         url: `${R2_PUBLIC_URL}/${key}`,
       })),
     });
   } catch (err) {
-    // Cleanup on error
-    req.files.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+    allFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
     fs.rmSync(jobDir, { recursive: true, force: true });
-    res.status(500).json({ error: "Failed to merge videos: " + err.message });
+    res.status(500).json({ error: "Failed to process: " + err.message });
   }
 });
 
